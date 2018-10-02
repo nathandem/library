@@ -1,0 +1,11 @@
+2018-10-02:
+- modified the code at several places to reflect the changes (fix the broken stuff) introduced by the Rental table and
+  the modification of the Book table. Adding some tests once the feature are stabilized a little will a good idea
+- created two management commands to be used as scheduled jobs to warn user about tight and overdue rentals
+- added a Booking table, but didn't do the logic for it
+- cleaned the code for a post on github
+
+2018-10-01:
+- renamed Book to GenericBook and BookInstance to Book, it makes more sense in the natural language and in the code
+- created first custom migration, involving the renaming of two tables and a FK (intermediate transition to integer is needed)
+- added a Rental table, allowing to track current rentals, spot bad subscribers and reveal popular books

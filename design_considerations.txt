@@ -1,0 +1,58 @@
+This app is an API. The view part of the MVC is up to a javascript-based or a mobile app.
+
+
+Consideration on the use of serializer to handle the body of the post request of RentBook
+-----------------------------------------------------------------------------------------
+
+Performing the update with a serializer wouldn't be that simple, but feasable.
+Here's how it would work:
+The current SubscriberSerializer doesn't fit, because it expects most of a subscriber fields information,
+so we would have to create a new one.
+
+This new serializer, let's call it RentBookSerializer, would take:
+I: book_id (read_only field) & some extra context to know the subscriber
+    with this information it'd assign the book to the subscriber,
+    and change the status of the book plus its due_back date
+O: book.book.title & book.due_back (write_only fields)
+
+Because I aim to perform multiple update, I'd have to link a ListSerializer to my Serializer (better to do
+a staight serializer with so few fields). It'd be the related ListSerializer that take care of the batch update.
+
+In the end,
+Pro: validation (though I can easily perfom the "technical part" of the validation concerning the ids here with
+get_object_or_404, then I can perform my business logic validation for the book status)
+Con: I don't feel it's much easier to do this. Plus, in term of making the code more generic/DRF for
+latter re-use by another section of the code, I don't feel there's a big gain compared to create a straight
+python function which would take the book ids and the subscriber (but no request, to make it really
+decorelated from the view, a real controller).
+
+In short, I rather keep my view as it is now. If a need reveals itself latter to use this rent feature
+somewhere else, I'll make it a generic controller.
+
+=> in general, when should we use a Form/Serializer to handle post vs doing it by hand?
+I guess, whenever it's creating or updating a wide number of fields, go for Form/Serializer.
+On the other hand, when only a few fields are involved, especially if it's on different entities, stay with
+view (or controller).
+
+
+Consideration on the appropriate extend of the Librarian model
+--------------------------------------------------------------
+
+This model could include a more complete description of the librarian,
+with information with his/her address, bank accounts, etc..
+And, even though there might be more than 2 types of librarians in the roles of the library,
+only 2 are considered in the system, based on whether or not they can create other librarian accounts.
+Being more detailed in the role of the librarian is not the purpose of this library application,
+it's the responsibility of the HR application.
+
+
+Short consideration on historical records
+-----------------------------------------
+
+This Rental table is considered sufficient to old historic records for the system.
+- a BookStatusHistory table tracking variations of statuses over time would have told how long books are in
+  Maintenance status (not so useful) and in Booked status (would have been a nice other source of information
+  hadn't we have the Booking table)
+- a BookStatusHistory referencing the Librarians behind the change of status of a book would have been a tool to
+  follow the activity of the librarians. But it's not the propose of this system to perform HR-related objectives
+w
