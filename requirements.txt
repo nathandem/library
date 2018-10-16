@@ -6,7 +6,7 @@ backcall==0.1.0
 cffi==1.11.5
 cryptography==2.3.1
 decorator==4.3.0
-Django==2.1.1
+Django==2.1.2
 django-rest-knox==3.1.5
 djangorestframework==3.8.2
 factory-boy==2.11.1
