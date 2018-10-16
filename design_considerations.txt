@@ -56,3 +56,19 @@ This Rental table is considered sufficient to old historic records for the syste
 - a BookStatusHistory referencing the Librarians behind the change of status of a book would have been a tool to
   follow the activity of the librarians. But it's not the propose of this system to perform HR-related objectives
 w
+
+
+On Subscribers and Users
+------------------------
+
+Rent will continue to be done though the User model (though some verification needs to be done to ensure only subscribers rent) because it's where the username, first and last names are (in short the core identity of the person)
+
+
+On field names
+--------------
+
+I give fields/columns semi-verbose names, so that no Django `verbose_name` is needed.
+The name should indicate both the meaning of the column, but also its type.
+
+In the Book model: `joined_library_on` suggests it's a Date, `joined_library_at` would have been a Datetime
+Example in the Subscriber model: `has_rent_issue`, `received_warning` can't be but booleans

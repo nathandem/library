@@ -1,14 +1,20 @@
 from datetime import date, timedelta
 
-from django.contrib.auth.models import User
-from django.db import models
 from django.conf import settings
+from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
+from django.db import models
+
 
 # Auth
 
 class Librarian(models.Model):
     """
     Manager librarians can create librarian accounts, rank and file librarians can't.
+
+    Note: librarians' user__username derives from their first and last names
+    Note2: librarians don't get attached to the 'Librarians' group automatically,
+           no user gets. Need to perform this manually.
     """
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     is_manager = models.BooleanField()
@@ -21,13 +27,16 @@ class Librarian(models.Model):
 
 
 class Subscriber(models.Model):
+    """
+    Note: subscribers' user__username == user__email
+    """
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     address_number_and_street = models.CharField(max_length=70)
     address_zipcode = models.CharField(max_length=20)
     iban = models.CharField(max_length=40)
-    subscription_date = models.DateField(auto_now_add=True)
+    subscription_date = models.DateField(default=date.today)
     has_rent_issue = models.BooleanField(default=False)
-    warning = models.BooleanField(default=False)
+    received_warning = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['user__first_name']
@@ -51,13 +60,13 @@ class Subscriber(models.Model):
     def can_rent(self):
         return (
             not self.has_rent_issue
-            and not self.subscription_expired
+            and self.valid_subscription
             and self.current_rentals_nb < settings.MAX_RENT_BOOKS
         )
 
     @property
-    def subscription_expired(self):
-        return date.today() > (self.subscription_date + timedelta(days=settings.SUBSCRIPTION_DAYS_LENGTH))
+    def valid_subscription(self):
+        return date.today() < (self.subscription_date + timedelta(days=settings.SUBSCRIPTION_DAYS_LENGTH))
 
 
 # Library management
@@ -101,6 +110,7 @@ class Book(models.Model):
         ('RENT', "Rent"),
         ('BOOKED', "Booked"),
         ('MAINTENANCE', "Maintenance"),
+        ('RETIRED', "Retired")
     )
 
     CAUSES_BOOK_RETIREMENT = (
@@ -122,10 +132,29 @@ class Book(models.Model):
         ordering = ['generic_book', 'id']
 
     def __str__(self):
-        return "{} - {}".format(self.generic_book, self.pk)
+        return f'{self.generic_book} - {self.pk}'
+
+    def clean(self):
+        # even to clean just one field, use this hook
+        # clean_fields perform some low-level validation on the type
+        self.check_book_properly_left_library()
+
+    def check_book_properly_left_library(self):
+        if self.left_library_on and not self.left_library_cause:
+            raise ValidationError("A book can't left the library without a cause")
+        if self.left_library_cause and not self.left_library_on:
+            raise ValidationError("A book can't have a left_cause without a left_library_on date")
+        if (self.left_library_on or self.left_library_cause) and not self.status == 'RETIRED':
+            raise ValidationError("A book can't left the library and not be retired")
+        if self.status == 'RETIRED' and not (self.left_library_on and self.left_library_cause):
+            raise ValidationError("A book can't be retired without both left_library_on and left_library_cause filled")
+
+    def save(self, **kwargs):
+        self.clean() # to force clean to be used also outside forms and serializers
+        super().save(**kwargs)
 
     @property
-    def current_rental(self): # no more than once at the time, otherwise the system is broken somewhere (make a test for this)
+    def current_rental(self): # no more than one at the time, otherwise the system is broken somewhere (make a test for this)
         if self.status != 'RENT':
             return None
         return self.rentals.filter(returned_on__isnull=True).first()
@@ -137,15 +166,31 @@ class Rental(models.Model):
     - keep track of current rentals, allowing to know if a rent is late (send email to subscriber and mark him has_rent_issue)
     - keep track of previous rentals, allowing to perform some analytics on the more, or least, popular GenericBooks
     """
+    # fields filled at the creation of the rental
     user = models.ForeignKey(to=User, on_delete=models.PROTECT, related_name='rent_books')
     book = models.ForeignKey(to=Book, on_delete=models.PROTECT, related_name='rentals')
     rent_on = models.DateField(auto_now_add=True)
-    due_for = models.DateField(default=date.today() + timedelta(days=settings.MAX_RENT_DAYS))
+    due_for = models.DateField() # defined in `self.set_due_for()`
+
+    # fields filled at the end of the rental
     returned_on = models.DateField(blank=True, null=True) # opti: enforce a constraint so that only one record with a given book may have returned_on to NULL
     late = models.BooleanField(default=False)
 
     def __str__(self):
-        return "({}) {} rent by {}".format(self.late, self.book.generic_book.title, self.user.get_full_name)
+        return "({}) {} rent by {}".format(
+            "Late" if self.late else "Not late",
+            self.book.generic_book.title,
+            self.user.username
+        )
+
+    def save(self, **kwargs):
+        is_new = not bool(self.pk)
+        if is_new:
+            self.set_due_for()
+        super().save(**kwargs)
+
+    def set_due_for(self):
+        self.due_for = date.today() + timedelta(days=settings.MAX_RENT_DAYS)
 
 
 class Booking(models.Model):

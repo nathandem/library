@@ -29,4 +29,3 @@ class IsManager(BasePermission):
         if request.user and request.user.groups.filter(name='Managers').exists():
             return True
         return False
-

@@ -9,6 +9,9 @@ decorator==4.3.0
 Django==2.1.1
 django-rest-knox==3.1.5
 djangorestframework==3.8.2
+factory-boy==2.11.1
+Faker==0.9.1
+freezegun==0.3.10
 idna==2.7
 ipdb==0.11
 ipython==7.0.1
@@ -18,13 +21,15 @@ parso==0.3.1
 pexpect==4.6.0
 pickleshare==0.7.5
 prompt-toolkit==2.0.5
-psycopg2==2.7.5
+psycopg2-binary==2.7.5
 ptyprocess==0.6.0
 pycparser==2.19
 Pygments==2.2.0
 pyOpenSSL==18.0.0
+python-dateutil==2.7.3
 pytz==2018.5
 simplegeneric==0.8.1
 six==1.11.0
+text-unidecode==1.2
 traitlets==4.3.2
 wcwidth==0.1.7

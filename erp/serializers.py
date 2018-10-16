@@ -1,18 +1,26 @@
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Group
 
 from rest_framework import serializers
 
 from . import models as erp_models
+from .utils import strip_nonascii
 
 
 # USER MGT
 
 class UserSerializer(serializers.ModelSerializer):
+    # StringRelatedField are read_only
+    # without required=False, DRF raises ValidationError if not here
+    # note: because this field is declared here and not in the Meta class,
+    #       it's important to pass the field methods here, not
+    #       hope it's derived from the Meta class
+    groups = serializers.StringRelatedField(many=True, required=False)
+
     class Meta:
         model = User
-        fields = ('username', 'password', 'email', 'first_name', 'last_name', 'is_active')
-        read_only_fields = ('username',)
-        write_only_fields = ('password',)
+        fields = ('username', 'password', 'email', 'first_name', 'last_name', 'groups', 'is_active')
+        read_only_fields = ('username', 'is_active')
+        write_only_fields = ('password', 'groups') # write_only_fields not hidden for read
 
 
 class SubscriberSerializer(serializers.ModelSerializer):
@@ -36,19 +44,90 @@ class SubscriberSerializer(serializers.ModelSerializer):
       }
     }
     """
-    user = UserSerializer()
+    user = UserSerializer() # remind: nested serializers are read-only, but validation occurs on them anyway...
 
     class Meta: #TODO include current rentals and bookings
         model = erp_models.Subscriber
         fields = ('id', 'address_number_and_street', 'address_zipcode', 'subscription_date',
-                  'iban', 'has_rent_issue', 'can_rent', 'subscription_expired', 'user')
+                  'iban', 'has_rent_issue', 'can_rent', 'valid_subscription', 'user')
         read_only_fields = ('id',)
+
+    # TODO make this validation more generic, to also use it with LibrarianSerializer
+    def validate(self, data):
+        """
+        I want to ensure users provide some optional information (email,
+        first_name, last_name) beside the two required ones (username and password).
+        """
+        # don't the validation for update, they usually don't
+        # include all the info and would raise undesired ValidationError
+        if self.instance:
+            return data
+
+        user_keys = {
+            'email': 'The user email is missing',
+            'first_name': 'The user first_name is missing',
+            'last_name': 'The user last_name is missing',
+            'password': 'The user password is missing',
+        }
+
+        user = data.get('user')
+        for user_key in user_keys:
+            if user_key not in user.keys():
+                raise serializers.ValidationError(user_keys[user_key])
+        return data
 
     def create(self, validated_data):
         user_data = validated_data.pop('user')
         user_data['username'] = user_data.get('email') # for subscribers, username = email
         user = User.objects.create_user(**user_data)
+        subscribers_group = Group.objects.get(name='Subscribers')
+        user.groups.add(subscribers_group)
         return erp_models.Subscriber.objects.create(user=user, **validated_data)
+
+    def update(self, instance, validated_data):
+        if 'user' in validated_data.keys():
+            user_data = validated_data.pop('user')
+            user_serializer = UserSerializer(instance=instance.user, data=user_data, partial=True)
+            if user_serializer.is_valid(raise_exception=True):
+                user_serializer.save()
+        return super().update(instance, validated_data)
+
+
+class LibrarianSerializer(serializers.ModelSerializer):
+    user = UserSerializer()
+
+    class Meta:
+        model = erp_models.Librarian
+        fields = ('id', 'is_manager', 'user')
+        read_only_fields = ('id',)
+
+    def generate_username(self, first, last):
+        first = strip_nonascii(first).lower().replace(' ', '')
+        last = strip_special_char(last).lower().replace(' ', '')
+        n = 1
+        while True:
+            username = first[0:n] + last
+            if not erp_models.User.objects.filter(username=username).exists():
+                return username
+            if n == 10: # no error raised if we go beyond the end of the string with [a:b]
+                raise serializers.ValidationError("Error when trying to generate the username")
+            n += 1
+
+    def group_to_join(self, **validated_data):
+        if validated_data.get('is_manager'):
+            return Group.objects.get(name='Managers')
+        return Group.objects.get(name='Librarians')
+
+    def create(self, validated_data):
+        user_data = validated_data.pop('user')
+        user_data['username'] = self.generate_username(
+            user_data.get('first_name'),
+            user_data.get('last_name'),
+        )
+        user = User.objects.create_user(**user_data)
+        group = self.group_to_join(**validated_data)
+        user.groups.add(group)
+        return erp_models.Librarian.objects.create(user=user, **validated_data)
 
 
 class AuthorSerializer(serializers.ModelSerializer):

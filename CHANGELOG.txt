@@ -1,3 +1,21 @@
+2018-10-15/16:
+- Begun testing the code: models done, utils done, serializer done (others still to do) and views to do
+    Time spent understanding testing and how testing should be done.
+- Adjustments made at several places of the app as a result of the process of writing tests
+- new strip_nonascii utils function to handle properly the tests
+- factories: ditch most `django_get_or_create` Meta class attributes because we can't get and update at the same time
+             and use factory.Sequence in fields that should be unique to reduce the risk of IntegrityError
+             and use @post_generate hook to add ManyToMany, which supposes the objects are created
+- add some verifications in models.py for books, using clean() (called from save() to force use of clean() in save())
+- serializers: attach users to their group, validate entering data of the ModelSerializer and that of related model
+               and add create() and update() methods
+
+2018-10-8/9:
+- begun to test the code: factories created, some tests on the models
+- added an endpoint to create and update librarians using generic views
+- update the subscriber and librarian serializers to their respective groups
+- generate a username for the subscribers (librarians take the one from the mail system of the library)
+
 2018-10-02:
 - modified the code at several places to reflect the changes (fix the broken stuff) introduced by the Rental table and
   the modification of the Book table. Adding some tests once the feature are stabilized a little will a good idea

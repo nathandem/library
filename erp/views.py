@@ -9,6 +9,7 @@ from knox.views import LoginView as KnoxLoginView
 from rest_framework import permissions
 from rest_framework import status
 from rest_framework.authtoken.serializers import AuthTokenSerializer
+from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -25,8 +26,13 @@ from erp import permissions as erp_permissions
 class LoginView(KnoxLoginView):
     """
     The login view must be overwritten, knox doesn't check user's credentials at all!
+
+    POST body is like: {"username": "foo", "password": "bar"}
+
+    For subsequent requests, the token must be provided in a header like this:
+    "Authorization: Token xxx" (where xxx is the actual token received from the app)
     """
-    permission_classes = [permissions.AllowAny]
+    permission_classes = (permissions.AllowAny,)
 
     def post(self, request, format=None):
         serializer = AuthTokenSerializer(data=request.data)
@@ -40,10 +46,28 @@ class LoginView(KnoxLoginView):
 
 # RESOURCE MGT
 
+class LibrarianList(ListCreateAPIView):
+    """
+    As expected, ListCreateAPIView and its parents provide the same features
+    than the standard stuff I manually created below the other resources.
+
+    Note: provide no username, it's auto-generated
+    """
+    queryset = erp_models.Librarian.objects.all()
+    serializer_class = erp_serializers.LibrarianSerializer
+    permission_classes = (erp_permissions.IsManager,)
+
+
+class LibrarianDetail(RetrieveUpdateDestroyAPIView):
+    queryset = erp_models.Librarian.objects.all()
+    serializer_class = erp_serializers.LibrarianSerializer
+    permission_classes = (erp_permissions.IsManager,)
+
+
 class SubscriberList(PageNumberPagination, APIView):
     """
     Due to a choice of splitting the User information in two tables to maintain
-    the default User model clean, this serializer writes into 2 models.
+    the default User model clean, the related serializer writes into 2 models.
 
     The presentation of the empty form is the responsibility of the front app.
     """
@@ -278,7 +302,7 @@ class RentBook(APIView):
             issues = []
             if subscriber.has_rent_issue:
                 issues.append({'type': 'has_rent_issue'})
-            if subscriber.subscription_expired:
+            if not subscriber.valid_subscription:
                 issues.append({'type': 'subscription_expired'})
             if subscriber.current_rentals_nb == library_settings.MAX_RENT_BOOKS:
                 issues.append({'type': 'max number of books rent reached'})
@@ -358,7 +382,7 @@ class ReturnBook(APIView):
                 rental.returned_on = today
                 if today > rental.due_for:
                     rental.late = True
-                    subscriber.warning = True
+                    subscriber.received_warning = True
                     subscriber.save()
                 rental.save()
                 book.status = 'AVAILABLE'

@@ -15,6 +15,8 @@ urlpatterns = [
     ### RESOURCE MGT
     # These endpoints mostly act on just one resource (REST principle)
     # They highly rely on DRF's serializers for serialization, deserialization, creation and update
+    path('librarians/', views.LibrarianList.as_view()),
+    path('librarians/<int:pk>/', views.LibrarianDetail.as_view()),
     path('subscribers/', views.SubscriberList.as_view()),
     path('subscribers/<int:pk>/', views.SubscriberDetail.as_view()),
 
