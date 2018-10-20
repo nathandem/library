@@ -30,6 +30,7 @@ class Subscriber(models.Model):
     """
     Note: subscribers' user__username == user__email
     """
+    # OneToOneField() = ForeignKey(unique=True)
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     address_number_and_street = models.CharField(max_length=70)
     address_zipcode = models.CharField(max_length=20)

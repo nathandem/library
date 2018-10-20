@@ -3,16 +3,11 @@ Just call the views and test the response objects.
 (the view is a black box)
 Test the components of the view in unit tests, like test_serializers and test_utils.
 
-
-
-
-
-
 Tests to write:
 for the GET of RentBook
 1) check subscriber who can rent (no book rent),
   can indeed rent and has the correct response
-2) check subscriber who cannont rent,
+2) check subscriber who cannot rent,
   cannot rent indeed and has the correct response
 3) check subscriber who can rent (1 book rent),
   can indeed rent and has the correct response (2 allowed)

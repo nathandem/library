@@ -8,51 +8,21 @@ from .utils import strip_nonascii
 
 # USER MGT
 
-class UserSerializer(serializers.ModelSerializer):
-    # StringRelatedField are read_only
-    # without required=False, DRF raises ValidationError if not here
-    # note: because this field is declared here and not in the Meta class,
-    #       it's important to pass the field methods here, not
-    #       hope it's derived from the Meta class
-    groups = serializers.StringRelatedField(many=True, required=False)
-
-    class Meta:
-        model = User
-        fields = ('username', 'password', 'email', 'first_name', 'last_name', 'groups', 'is_active')
-        read_only_fields = ('username', 'is_active')
-        write_only_fields = ('password', 'groups') # write_only_fields not hidden for read
-
-
-class SubscriberSerializer(serializers.ModelSerializer):
+class RelatedUserValidatorMixin:
     """
-    Warning: be sure to always pass nested objects' fields, one level
-    below the fields of the object of the ModelSerializer.
-    Example response for a GET:
-    {
-      "address_number_and_street": "1, rue de la Paix",
-      "address_zipcode": "75001",
-      "has_rent_issue": false,
-      "iban": "1234",
-      "subscription_date": "2018-09-18",
-      "user": {
-        "username": "jack.cash@g.co",
-        "password": "fakepwdd",
-        "email": "jack.cash@g.co",
-        "first_name": "Jack",
-        "last_name": "Cash",
-        "id": 7,
-      }
-    }
+    Why using a custom mixin, instead of putting this user validation in UserSerializer?
+       self.instance is only available in the model serializer we call directly,
+       not the related object. So here, self.instance is only available in
+       SubscriberSerializer and LibrarianSerializer, not in UserSerializer.
+    Why not using a DRF custom Validator?
+       First, their syntax is clumsy > https://www.django-rest-framework.org/api-guide/validators/#writing-custom-validators
+       Second, a mixin allow to easy access self.instance
+
+    Note: it's worth noting that DRF first validates related objects, before validating
+    the core objects. So when calling LibrarianSerializer or SubscriberSerializer,
+    UserSerializer gets validated first, then LibrarianSerializer or SubscriberSerializer.
+    Note 2: serializer.validate() is an optional, custom validation hook (like clean() with regular django forms)
     """
-    user = UserSerializer() # remind: nested serializers are read-only, but validation occurs on them anyway...
-
-    class Meta: #TODO include current rentals and bookings
-        model = erp_models.Subscriber
-        fields = ('id', 'address_number_and_street', 'address_zipcode', 'subscription_date',
-                  'iban', 'has_rent_issue', 'can_rent', 'valid_subscription', 'user')
-        read_only_fields = ('id',)
-
-    # TODO make this validation more generic, to also use it with LibrarianSerializer
     def validate(self, data):
         """
         I want to ensure users provide some optional information (email,
@@ -76,6 +46,34 @@ class SubscriberSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(user_keys[user_key])
         return data
 
+
+class UserSerializer(serializers.ModelSerializer):
+    # StringRelatedField are read_only
+    # without required=False, DRF raises ValidationError if not here
+    # note: because this field is declared here and not in the Meta class,
+    #       it's important to pass the field methods here, not
+    #       hope it's derived from the Meta class
+    groups = serializers.StringRelatedField(many=True, required=False)
+
+    class Meta:
+        model = User
+        fields = ('username', 'password', 'email', 'first_name', 'last_name', 'groups', 'is_active')
+        read_only_fields = ('username', 'is_active') # ignored if passed in create or update
+        write_only_fields = ('password', 'groups') # write_only_fields not hidden when read
+
+
+class SubscriberSerializer(RelatedUserValidatorMixin, serializers.ModelSerializer):
+    """
+    See test_serializers for example of working, and non-working, dicts.
+    """
+    user = UserSerializer() # remind: nested serializers are read-only, but validation occurs on them anyway...
+
+    class Meta: #TODO include current rentals and bookings
+        model = erp_models.Subscriber
+        fields = ('id', 'address_number_and_street', 'address_zipcode', 'subscription_date',
+                  'iban', 'has_rent_issue', 'can_rent', 'valid_subscription', 'user')
+        read_only_fields = ('id',)
+
     def create(self, validated_data):
         user_data = validated_data.pop('user')
         user_data['username'] = user_data.get('email') # for subscribers, username = email
@@ -93,7 +91,7 @@ class SubscriberSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 
-class LibrarianSerializer(serializers.ModelSerializer):
+class LibrarianSerializer(RelatedUserValidatorMixin, serializers.ModelSerializer):
     user = UserSerializer()
 
     class Meta:
@@ -103,7 +101,7 @@ class LibrarianSerializer(serializers.ModelSerializer):
 
     def generate_username(self, first, last):
         first = strip_nonascii(first).lower().replace(' ', '')
-        last = strip_special_char(last).lower().replace(' ', '')
+        last = strip_nonascii(last).lower().replace(' ', '')
         n = 1
         while True:
             username = first[0:n] + last
@@ -128,6 +126,14 @@ class LibrarianSerializer(serializers.ModelSerializer):
         group = self.group_to_join(**validated_data)
         user.groups.add(group)
         return erp_models.Librarian.objects.create(user=user, **validated_data)
+
+    def update(self, instance, validated_data):
+        if 'user' in validated_data.keys():
+            user_data = validated_data.pop('user')
+            user_ser = UserSerializer(instance=instance.user, data=user_data, partial=True)
+            if user_ser.is_valid(raise_exception=True):
+                user_ser.save()
+        return super().update(instance, validated_data)
 
 
 class AuthorSerializer(serializers.ModelSerializer):
@@ -169,5 +175,12 @@ class BookSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = erp_models.Book
-        fields = ('id', 'generic_book', 'generic_book_id', 'status')
+        # A serializer raises the `required` error only if
+        # 1) the field is required by the model (no default or no blank=True),
+        # 2) the field received the DRF argument `required=True`
+        # here, not passing 'status' at creation is fine as the model
+        # provides a default value
+        fields = ('id', 'generic_book', 'generic_book_id',
+                  'status', 'joined_library_on', 'left_library_on',
+                  'left_library_cause')
         depth = 1
