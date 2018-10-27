@@ -46,7 +46,7 @@ class Subscriber(models.Model):
         return self.user.first_name
 
     @property
-    def current_rentals(self):
+    def current_rentals(self): # get nb with .count(), better that len(current_rentals)
         return self.user.rent_books.exclude(returned_on__isnull=False)
 
     @property
@@ -54,15 +54,11 @@ class Subscriber(models.Model):
         return self.user.bookings.filter(book=True)
 
     @property
-    def current_rentals_nb(self):
-        return self.current_rentals.count() if self.current_rentals else 0
-
-    @property
     def can_rent(self):
         return (
             not self.has_rent_issue
             and self.valid_subscription
-            and self.current_rentals_nb < settings.MAX_RENT_BOOKS
+            and self.current_rentals.count() < settings.MAX_RENT_BOOKS
         )
 
     @property
@@ -160,6 +156,8 @@ class Book(models.Model):
             return None
         return self.rentals.filter(returned_on__isnull=True).first()
 
+def set_due_for():
+    return date.today() + timedelta(days=settings.MAX_RENT_DAYS)
 
 class Rental(models.Model):
     """
@@ -171,10 +169,14 @@ class Rental(models.Model):
     user = models.ForeignKey(to=User, on_delete=models.PROTECT, related_name='rent_books')
     book = models.ForeignKey(to=Book, on_delete=models.PROTECT, related_name='rentals')
     rent_on = models.DateField(auto_now_add=True)
-    due_for = models.DateField() # defined in `self.set_due_for()`
+    # set_due_for callable can't be a static method in Rental,
+    # because DateField couldn't access it (not with `self` as self refers to Rental not DateField,
+    # nor with `Rental` as Rental isn't defined yet)
+    due_for = models.DateField(default=set_due_for)
 
     # fields filled at the end of the rental
-    returned_on = models.DateField(blank=True, null=True) # opti: enforce a constraint so that only one record with a given book may have returned_on to NULL
+    # opti: enforce a constraint so that only one record with a given book may have returned_on to NULL
+    returned_on = models.DateField(blank=True, null=True)
     late = models.BooleanField(default=False)
 
     def __str__(self):
@@ -183,15 +185,6 @@ class Rental(models.Model):
             self.book.generic_book.title,
             self.user.username
         )
-
-    def save(self, **kwargs):
-        is_new = not bool(self.pk)
-        if is_new:
-            self.set_due_for()
-        super().save(**kwargs)
-
-    def set_due_for(self):
-        self.due_for = date.today() + timedelta(days=settings.MAX_RENT_DAYS)
 
 
 class Booking(models.Model):

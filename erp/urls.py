@@ -12,7 +12,7 @@ urlpatterns = [
     path('logoutall/', knox_views.LogoutAllView.as_view(), name='logoutall'),
 
 
-    ### RESOURCE MGT
+    ### RESOURCE MGT / RESOURCE-CENTRIC
     # These endpoints mostly act on just one resource (REST principle)
     # They highly rely on DRF's serializers for serialization, deserialization, creation and update
     path('librarians/', views.LibrarianList.as_view()),
@@ -30,10 +30,10 @@ urlpatterns = [
     path('books/<int:pk>/', views.BookDetail.as_view()),
 
 
-    ### BUSINESS LOGIC
-    # These endpoints do more than CRUD operations (span several resources and perform business logic)
+    ### BUSINESS LOGIC / PROCESS-CENTRIC
+    # These endpoints do more than CRUD operations (span several resources and are process-oriented)
     # They barely not rely on DRF's serializers
-    path('rent/<int:pk>/', views.RentBook.as_view()),
-    path('return/<int:pk>/', views.ReturnBook.as_view()),
-    path('book/<int:pk>/', views.BookGenericBook.as_view()),
+    path('rent/<int:sub_pk>/', views.RentBook.as_view()),
+    path('return/<int:sub_pk>/', views.ReturnBook.as_view()),
+    path('book/<int:sub_pk>/', views.BookGenericBook.as_view()),
 ]

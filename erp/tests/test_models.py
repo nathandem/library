@@ -48,7 +48,7 @@ class SubscriberModelTest(TestCase):
 
     def test_books_related_properties(self):
         sub_with_no_book = erp_factories.SubscriberFactory()
-        self.assertEqual(sub_with_no_book.current_rentals_nb, 0)
+        self.assertEqual(sub_with_no_book.current_rentals.count(), 0)
         self.assertEqual(list(sub_with_no_book.current_bookings), [])
         self.assertTrue(sub_with_no_book.can_rent)
 
@@ -59,7 +59,7 @@ class SubscriberModelTest(TestCase):
             user=sub_with_books.user,
             book=book,
         ) for book in books]
-        self.assertEqual(sub_with_books.current_rentals_nb, 2)
+        self.assertEqual(sub_with_books.current_rentals.count(), 2)
         self.assertEqual(list(sub_with_books.current_rentals), rentals)
         self.assertEqual(list(sub_with_books.current_bookings), [])
         self.assertTrue(sub_with_books.can_rent)
@@ -70,18 +70,19 @@ class SubscriberModelTest(TestCase):
             book=another_book,
         )
         rentals.append(another_rental)
-        self.assertEqual(sub_with_books.current_rentals_nb, 3)
+        self.assertEqual(sub_with_books.current_rentals.count(), 3)
         self.assertEqual(list(sub_with_books.current_rentals), rentals)
         self.assertEqual(list(sub_with_books.current_bookings), [])
         self.assertFalse(sub_with_books.can_rent)
 
+
 class BookModelTest(TestCase):
     def test_joined_date(self):
-        new_book = erp_factories.ActiveBookFactory()
+        new_book = erp_factories.AvailableBookFactory()
         self.assertEqual(new_book.joined_library_on, date.today())
 
         with freeze_time(one_year_ago):
-            one_year_old_book = erp_factories.ActiveBookFactory.create()
+            one_year_old_book = erp_factories.AvailableBookFactory.create()
         self.assertEqual(one_year_old_book.joined_library_on, one_year_ago)
 
     def test_book_retire(self):
@@ -90,16 +91,17 @@ class BookModelTest(TestCase):
         self.assertTrue(bool(properly_retired_book.left_library_on))
         self.assertTrue(bool(properly_retired_book.left_library_cause))
 
-        badly_retired_book = erp_factories.ActiveBookFactory()
+        badly_retired_book = erp_factories.AvailableBookFactory()
         with self.assertRaises(ValidationError) as cm:
             badly_retired_book.status = 'RETIRED'
             badly_retired_book.save() # no saving, but badly_retired_book.status is still 'RETIRED' locally
         # important to test that we raised the correct ValidationError exception, and not another one
-        self.assertEqual(            cm.exception.message,
+        self.assertEqual(
+            cm.exception.message,
             "A book can't be retired without both left_library_on and left_library_cause filled",
         )
 
-        badly_retired_book = erp_factories.ActiveBookFactory()
+        badly_retired_book = erp_factories.AvailableBookFactory()
         with self.assertRaises(ValidationError) as cm:
             badly_retired_book.left_library_on = today
             badly_retired_book.save()
@@ -108,7 +110,7 @@ class BookModelTest(TestCase):
             "A book can't left the library without a cause",
         )
 
-        badly_retired_book = erp_factories.ActiveBookFactory()
+        badly_retired_book = erp_factories.AvailableBookFactory()
         with self.assertRaises(ValidationError) as cm:
             badly_retired_book.status = 'RETIRED'
             badly_retired_book.left_library_on = today
@@ -119,7 +121,7 @@ class BookModelTest(TestCase):
         )
 
     def test_book_rental_property(self):
-        available_book = erp_factories.ActiveBookFactory()
+        available_book = erp_factories.AvailableBookFactory()
         self.assertIsNone(available_book.current_rental)
 
         # opti: would be better to use one rental factory for that

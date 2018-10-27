@@ -13,6 +13,7 @@ from erp import serializers as erp_serializers
 class SubscriberSerializerTest(TestCase):
     @classmethod
     def setUpTestData(cls):
+        super().setUpTestData()
         # we need it existing for every subscriber
         Group.objects.create(name='Subscribers')
 
@@ -81,7 +82,7 @@ class SubscriberSerializerTest(TestCase):
             }
         }
         serializer = erp_serializers.SubscriberSerializer(data=sub)
-        with self.assertRaises(ValidationError):
+        with self.assertRaises(ValidationError) as e:
             serializer.is_valid(raise_exception=True)
         self.assertEqual(
             serializer.errors['non_field_errors'],
@@ -155,6 +156,7 @@ class SubscriberSerializerTest(TestCase):
 class LibrarianSerializerTest(TestCase):
     @classmethod
     def setUpTestData(cls):
+        super().setUpTestData()
         cls.librarians_group = Group.objects.create(name='Librarians')
         cls.managers_group = Group.objects.create(name='Managers')
 
@@ -210,6 +212,8 @@ class LibrarianSerializerTest(TestCase):
             serializer.is_valid(raise_exception=True)
         self.assertEqual(
             serializer.errors,
+            # DRF gives the name of the field concerned by the error,
+            # only when the field is part of the Model and is auto-detected by DRF
             {'non_field_errors': [ErrorDetail(string='The user last_name is missing', code='invalid')]}
         )
 
@@ -302,6 +306,7 @@ class GenericBookSerializerTest(TestCase):
     """
     @classmethod
     def setUpTestData(cls):
+        super().setUpTestData()
         cls.thoreau = erp_factories.AuthorFactory()
         cls.essay = erp_factories.GenreFactory()
         cls.walden = erp_factories.GenericBookFactory()
@@ -412,6 +417,7 @@ class BookSerializerTest(TestCase):
     """
     @classmethod
     def setUpTestData(cls):
+        super().setUpTestData()
         cls.gbook = erp_factories.GenericBookFactory(
             title='Zero to One',
         )
@@ -448,8 +454,8 @@ class BookSerializerTest(TestCase):
         )
 
     def test_serialize_valid_book(self):
-        book = erp_factories.ActiveBookFactory()
+        book = erp_factories.AvailableBookFactory()
 
         book_ser = erp_serializers.BookSerializer(book)
         self.assertTrue('joined_library_on' in book_ser.data.keys())
-        self.assertEqual(book_ser.data['status'], 'ACTIVE')
+        self.assertEqual(book_ser.data['status'], 'AVAILABLE')

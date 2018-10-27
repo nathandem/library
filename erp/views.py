@@ -18,20 +18,26 @@ from library import settings as library_settings # for now, the hard coded way i
 
 from erp import models as erp_models
 from erp import serializers as erp_serializers
-from erp import permissions as erp_permissions
+from erp.permissions import (
+    IsSubscriber,
+    IsLibrarianOrSubscriberReadOnly,
+    IsLibrarian,
+    IsManager
+)
 
 
 # AUTH
 
 class LoginView(KnoxLoginView):
     """
-    The login view must be overwritten, knox doesn't check user's credentials at all!
+    The login view must be overwritten, because knox doesn't check user's credentials
 
     POST body is like: {"username": "foo", "password": "bar"}
 
     For subsequent requests, the token must be provided in a header like this:
     "Authorization: Token xxx" (where xxx is the actual token received from the app)
     """
+    # when permission is AllowAny, DRF doesn't look at the authentication classes
     permission_classes = (permissions.AllowAny,)
 
     def post(self, request, format=None):
@@ -55,13 +61,13 @@ class LibrarianList(ListCreateAPIView):
     """
     queryset = erp_models.Librarian.objects.all()
     serializer_class = erp_serializers.LibrarianSerializer
-    permission_classes = (erp_permissions.IsManager,)
+    permission_classes = (IsManager,)
 
 
 class LibrarianDetail(RetrieveUpdateDestroyAPIView):
     queryset = erp_models.Librarian.objects.all()
     serializer_class = erp_serializers.LibrarianSerializer
-    permission_classes = (erp_permissions.IsManager,)
+    permission_classes = (IsManager,)
 
 
 class SubscriberList(PageNumberPagination, APIView):
@@ -71,7 +77,7 @@ class SubscriberList(PageNumberPagination, APIView):
 
     The presentation of the empty form is the responsibility of the front app.
     """
-    permission_classes = [erp_permissions.IsLibrarian]
+    permission_classes = (IsLibrarian,)
 
     def get(self, request):
         subscribers = erp_models.Subscriber.objects.all()
@@ -89,7 +95,7 @@ class SubscriberList(PageNumberPagination, APIView):
 
 
 class SubscriberDetail(APIView):
-    permission_classes = [erp_permissions.IsLibrarian]
+    permission_classes = (IsLibrarian,)
 
     def get(self, request, pk):
         subscriber = get_object_or_404(erp_models.Subscriber, pk=pk)
@@ -111,7 +117,7 @@ class SubscriberDetail(APIView):
 
 
 class AuthorList(PageNumberPagination, APIView):
-    permission_classes = [erp_permissions.IsLibrarian]
+    permission_classes = (IsLibrarian,)
 
     def get(self, request):
         authors = erp_models.Author.objects.all()
@@ -129,7 +135,7 @@ class AuthorList(PageNumberPagination, APIView):
 
 
 class AuthorDetail(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = (IsLibrarian,)
 
     def get(self, request, pk):
         author = get_object_or_404(erp_models.Author, pk=pk)
@@ -151,7 +157,7 @@ class AuthorDetail(APIView):
 
 
 class GenreList(PageNumberPagination, APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = (IsLibrarian,)
 
     def get(self, request):
         genres = erp_models.Genre.objects.all()
@@ -169,7 +175,7 @@ class GenreList(PageNumberPagination, APIView):
 
 
 class GenreDetail(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = (IsLibrarian,)
 
     def get(self, request, pk):
         genre = get_object_or_404(erp_models.Genre, pk=pk)
@@ -191,7 +197,7 @@ class GenreDetail(APIView):
 
 
 class GenericBookList(PageNumberPagination, APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = (IsLibrarianOrSubscriberReadOnly,)
 
     def get(self, request):
         generic_books = erp_models.GenericBook.objects.all()
@@ -209,7 +215,7 @@ class GenericBookList(PageNumberPagination, APIView):
 
 
 class GenericBookDetail(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = (IsLibrarianOrSubscriberReadOnly,)
 
     def get(self, request, pk):
         generic_book = get_object_or_404(erp_models.GenericBook, pk=pk)
@@ -217,7 +223,7 @@ class GenericBookDetail(APIView):
         return Response(serializer.data)
 
     def put(self, request, pk):
-        generic_book = get_object_or_404(erp_models.Book, pk=pk)
+        generic_book = get_object_or_404(erp_models.GenericBook, pk=pk)
         serializer = erp_serializers.GenericBookSerializerWrite(generic_book, data=request.data, partial=True)
         if serializer.is_valid(raise_exception=True):
             serializer.save()
@@ -231,7 +237,7 @@ class GenericBookDetail(APIView):
 
 
 class BookList(PageNumberPagination, APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = (IsLibrarianOrSubscriberReadOnly,)
 
     def get(self, request):
         books = erp_models.Book.objects.all()
@@ -249,7 +255,7 @@ class BookList(PageNumberPagination, APIView):
 
 
 class BookDetail(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = (IsLibrarianOrSubscriberReadOnly,)
 
     def get(self, request, pk):
         book = get_object_or_404(erp_models.Book, pk=pk)
@@ -270,7 +276,7 @@ class BookDetail(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-# BUSINESS LOGIC
+# BUSINESS LOGIC / PROCESS-CENTRIC
 
 class RentBook(APIView):
     """
@@ -280,37 +286,45 @@ class RentBook(APIView):
     - 2nd: if the user can rent, associate the book to the subscriber
            This is performed with the POST of this endpoint, using the data in the body of the request.
     """
-    permission_classes = [erp_permissions.IsLibrarian]
+    permission_classes = (IsLibrarian,)
 
-    def get(self, request, pk):
+    def get(self, request, sub_pk):
         """
         Check whether a subscriber may rent new books.
-        Returns: {"can_rent": true, "nb_books_allowed": int, "current_rent_books": [{"title":..., "date_of_return":...}, ...]}
+        Returns: {
+            "can_rent": true,
+            "nb_books_allowed": int,
+            "current_rentals": [{"title":..., "date_of_return":...}, ...], OR NULL if no rentals
+            "issues": [{"type": "..."}] OR null if no issues (issues = issues with sub & max nb books reached)
+        }
         """
-        subscriber = get_object_or_404(erp_models.Subscriber.objects.select_related('user'), pk=pk)
+        subscriber = get_object_or_404(erp_models.Subscriber.objects.select_related('user'), pk=sub_pk)
         issues = None
         current_rentals = None
 
-        if subscriber.current_rentals_nb:
+        if subscriber.current_rentals.count():
             rentals = subscriber.current_rentals
-            current_rentals = [{'title': rental.book.generic_book.title, 'date_of_return': rental.due_for} for rental in rentals]
+            current_rentals = [{'title': rental.book.generic_book.title,
+                                'date_of_return': rental.due_for} for rental in rentals]
 
         # subscriber cannot rent
         if not subscriber.can_rent:
             can_rent = False
             nb_books_allowed = 0
             issues = []
+            # no ValidationError (for field validation)
+            # opti: use APIException here, instead of a regular msg
             if subscriber.has_rent_issue:
-                issues.append({'type': 'has_rent_issue'})
+                issues.append({"type": "The subscriber has rent issues."})
             if not subscriber.valid_subscription:
-                issues.append({'type': 'subscription_expired'})
-            if subscriber.current_rentals_nb == library_settings.MAX_RENT_BOOKS:
-                issues.append({'type': 'max number of books rent reached'})
+                issues.append({"type": "The subscriber's subscription is over."})
+            if subscriber.current_rentals.count() == library_settings.MAX_RENT_BOOKS:
+                issues.append({"type": "Max number of books rent already reached."})
 
         # subscriber can rent
         else:
             can_rent = True
-            nb_books_allowed = library_settings.MAX_RENT_BOOKS - subscriber.current_rentals_nb
+            nb_books_allowed = library_settings.MAX_RENT_BOOKS - subscriber.current_rentals.count()
 
         message = {
             'can_rent': can_rent,
@@ -318,85 +332,78 @@ class RentBook(APIView):
             'current_rentals': current_rentals,
             'issues': issues,
         }
-        return Response(message, status=status.HTTP_200_OK if message['can_rent'] else status.HTTP_403_FORBIDDEN)
+        return Response(message, status=status.HTTP_200_OK if message['can_rent'] else status.HTTP_400_BAD_REQUEST)
 
-    def post(self, request, pk): # opti: maybe it'd make more sense to post the books, one by one
+    def post(self, request, sub_pk):
         """
-        Connect the books to the user, after having check that user can and that they are "Available"
+        Connect a book to the user, after having check that user can rent and that the book is 'AVAILABLE'.
+        To rent several books, repeat the call as many times as it takes with different `book_id`.
+        After this call, makes sense to get the detail of the subscriber's situation.
+        (that's the job of the librarian to do that, when renting books become a self-service thing,
+        change this or make sure the UI make a call to the subscriber's endpoint alongside this one each time
+        to display the subscriber's situation in parallel in the screen)
 
-        Request body: {"book_ids": ["id", ...]}
-        Response body: {}
+        I: {"book_id": id}
+        O (success): {"book__generic_book__title": "...", "due_for": ...}
         """
-        subscriber = get_object_or_404(erp_models.Subscriber.objects.select_related('user'), pk=pk)
+        subscriber = get_object_or_404(erp_models.Subscriber.objects.select_related('user'), pk=sub_pk)
         if not subscriber.can_rent:
-            return Response(status=status.HTTP_403_FORBIDDEN)
+            # note1: a redirection would have made the tick if the logic of the get method was in a different function
+            # note2: without `return` DRF sends 2 responses, the one from the get method and the one from this post
+            return self.get(request, sub_pk)
 
-        book_ids = request.data.get('book_ids')
-        if not book_ids:
-            return Response(data={"detail": "No book_ids were provided"}, status=status.HTTP_400_BAD_REQUEST)
+        book_id = request.data.get('book_id')
+        if not book_id:
+            return Response(data={"detail": "No book_id was provided."}, status=status.HTTP_400_BAD_REQUEST)
 
-        with transaction.atomic():
-            for book_id in book_ids:
-                book = get_object_or_404(erp_models.Book, pk=book_id)
-                if not book.status == 'AVAILABLE':
-                    return Response(
-                        data={"detail": "{} is currently in the status {}".format(book.generic_book.title, book.status)},
-                        status=status.HTTP_403_FORBIDDEN,
-                    )
-                erp_models.Rental.objects.create(user=subscriber.user, book=book)
-                book.status = 'RENT'
-                book.save()
+        book = get_object_or_404(erp_models.Book, pk=book_id)
+        if not book.status == 'AVAILABLE':
+            return Response(
+                data={"detail": "{} is in the status {}.".format(book.generic_book.title, book.status)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        erp_models.Rental.objects.create(user=subscriber.user, book=book)
+        book.status = 'RENT'
+        book.save()
 
-        # changing type to list is an easy, fast way to serialize objects when used in conjunction
-        # with the values() queryset method to get only the good field
-        subscriber_rentals = list(subscriber.current_rentals.values('book__generic_book__title', 'due_for'))
-
-        return Response(subscriber_rentals, status=status.HTTP_200_OK)
+        # values() is a fast, easy way to serialize querysets with the good fields
+        # opti: return book_title instead of book__generic_book__title
+        last_rental = subscriber.current_rentals.values('book__generic_book__title', 'due_for').last()
+        return Response(last_rental)
 
 
 class ReturnBook(APIView):
-    def post(self, request, pk):
+    permission_classes = (IsLibrarian,)
+
+    def post(self, request, sub_pk):
         """The opposite of POST on RentBook
-        I: book_ids
-        O: confirmation that N book.generic_book.title are now returned
-            & reminder that N book.generic_book.title are still rent and due for M
+        I: {"book_id": id}
+        O (success): {'success': '{} was correctly returned.'}
+
+        Same remark than with RentBook.post() on informing the subscriber of his state and rentals.
         """
-        subscriber = get_object_or_404(erp_models.Subscriber, pk=pk)
+        subscriber = get_object_or_404(erp_models.Subscriber, pk=sub_pk)
 
-        book_ids = request.data.get('book_ids')
-        if not book_ids:
-            return Response({"detail": "No book_ids were provided"}, status=status.HTTP_400_BAD_REQUEST)
+        book_id = request.data.get('book_id')
+        if not book_id:
+            return Response({"detail": "No book_id were provided"}, status=status.HTTP_400_BAD_REQUEST)
 
-        returned_books = []
-        today = date.today()
-        with transaction.atomic():
-            for book_id in book_ids:
-                book = erp_models.Book.objects.get(pk=book_id)
-                rental = book.current_rental
-                if not rental.user == subscriber.user:
-                    return Response(
-                        data={"detail": "You can't return books that you didn't rent"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+        book = erp_models.Book.objects.get(pk=book_id)
+        rental = book.current_rental
+        if not rental.user == subscriber.user:
+            return Response(
+                data={"detail": "You can't return a book that you didn't rent yourself."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        rental.returned_on = date.today()
+        rental.save()
+        book.status = 'AVAILABLE'
+        book.save()
 
-                rental.returned_on = today
-                if today > rental.due_for:
-                    rental.late = True
-                    subscriber.received_warning = True
-                    subscriber.save()
-                rental.save()
-                book.status = 'AVAILABLE'
-                book.save()
-                returned_books.append(book.generic_book.title)
-
-        subscriber_books = list(subscriber.current_rentals.values('book__generic_book__title', 'due_for'))
-
-        msg = {
-            'returned_books': returned_books,
-            'subscriber_books': subscriber_books
-        }
-
-        return Response(msg, status=status.HTTP_200_OK)
+        return Response(
+            {'success': '{} was correctly returned.'.format(book.generic_book.title)},
+            status=status.HTTP_200_OK
+        )
 
 
 class BookGenericBook(APIView):
@@ -418,8 +425,10 @@ class BookGenericBook(APIView):
     #note: later, subscribers will be able to perform their bookings themselves. In this method, we will only have to
     change the way the subscriber_id is received (not through the url but the view context)
     """
-    def get(self, request, pk):
+    permission_classes = (IsLibrarian | IsSubscriber,)
+
+    def get(self, request, sub_pk):
         pass
 
-    def post(self, request, pk):
+    def post(self, request, sub_pk):
         pass

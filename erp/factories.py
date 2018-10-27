@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 
 from django.conf import settings
+from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import User, Group
 
 import factory
@@ -8,7 +9,27 @@ import factory
 from . import models as erp_models
 
 
-# Librarians
+# Groups
+
+class BaseGroupFactory(factory.DjangoModelFactory):
+    class Meta:
+        model = Group
+        django_get_or_create = ('name',)
+
+
+class ManagerGroupFactory(BaseGroupFactory):
+    name = 'Managers'
+
+
+class LibrarianGroupFactory(BaseGroupFactory):
+    name = 'Librarians'
+
+
+class SubscriberGroupFactory(BaseGroupFactory):
+    name = 'Subscribers'
+
+
+# Users
 
 class LibrarianUserFactory(factory.DjangoModelFactory):
     class Meta:
@@ -17,34 +38,26 @@ class LibrarianUserFactory(factory.DjangoModelFactory):
     # factory.Sequence is a solution against IntegrityError in tests
     # when calling several times the same factory, directly or indirectly (via SubFactories)
     username = factory.Sequence(lambda n: 'emile.litre%d' % n)
-    password = 'fakepwdd'
+    password = make_password('fakepwdd') # pretty rough, not for production
     email = factory.Sequence(lambda n: 'emile.litre%d@library.com' % n)
     first_name = 'Emile'
     last_name = factory.Sequence(lambda n: 'Littré%d' % n)
 
-
-class StandardLibrarianFactory(factory.DjangoModelFactory):
-    class Meta:
-        model = erp_models.Librarian
-
-    user = factory.SubFactory(LibrarianUserFactory)
-    is_manager = False
+    @factory.post_generation
+    def groups(self, create, extracted, **kwargs):
+        group = LibrarianGroupFactory.create()
+        self.groups.add(group)
 
 
-class ManagerLibrarianFactory(factory.DjangoModelFactory):
-    is_manager = True
+class ManagerUserFactory(LibrarianUserFactory):
+    @factory.post_generation
+    def groups(self, create, extracted, **kwargs):
+        group = ManagerGroupFactory()
+        self.groups.add(group)
 
 
-# Subscribers
-
-class SubscriberGroupFactory(factory.DjangoModelFactory):
-    class Meta:
-        model = Group
-        django_get_or_create = ('name',)
-
-    name = 'Subscribers'
-
-
+# don't overwrite this factory to create a custom user
+# it won't work, the password won't get hashed
 class SubscriberUserFactory(factory.DjangoModelFactory):
     class Meta:
         model = User
@@ -61,7 +74,7 @@ class SubscriberUserFactory(factory.DjangoModelFactory):
         # to avoid IntegrityError which happens otherwise when we try to create similar objects
 
     username = factory.Sequence(lambda n: 'lin.liu%d@test.co' % n)
-    password = 'fakepwdd'
+    password = make_password('fakepwdd')  # pretty rough, not for production
     email = factory.Sequence(lambda n: 'lin.liu%d@test.co' % n)
     first_name = 'Lin'
     last_name = factory.Sequence(lambda n: 'Liu - %d' % n)
@@ -71,6 +84,22 @@ class SubscriberUserFactory(factory.DjangoModelFactory):
     def groups(self, create, extracted, **kwargs):
         sub_group = SubscriberGroupFactory.create()
         self.groups.add(sub_group)
+
+
+# Library profiles: librarians, managers, subscribers
+
+
+class StandardLibrarianFactory(factory.DjangoModelFactory):
+    class Meta:
+        model = erp_models.Librarian
+
+    user = factory.SubFactory(LibrarianUserFactory)
+    is_manager = False
+
+
+class ManagerLibrarianFactory(StandardLibrarianFactory):
+    user = factory.SubFactory(ManagerUserFactory)
+    is_manager = True
 
 
 class SubscriberFactory(factory.DjangoModelFactory):
@@ -131,8 +160,8 @@ class BaseBookFactory(factory.DjangoModelFactory):
     generic_book = factory.SubFactory(GenericBookFactory)
 
 
-class ActiveBookFactory(BaseBookFactory):
-    status = 'ACTIVE'
+class AvailableBookFactory(BaseBookFactory):
+    status = 'AVAILABLE'
 
 
 class RentBookFactory(BaseBookFactory):
