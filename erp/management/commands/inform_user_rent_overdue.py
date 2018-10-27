@@ -15,23 +15,36 @@ class Command(BaseCommand):
         """
         today = date.today()
 
-        overdue_rents = erp_models.Rental.objects.filter(due_for__gte=today)
+        late_subs = (
+            erp_models.Subscriber.objects
+            .exclude(user__rent_books__isnull=True) # can't use model properties in a querysets
+            .filter(user__rent_books__returned_on__isnull=True)
+            .filter(user__rent_books__due_for__gte=today)
+        )
 
-        for overdue_rent in overdue_rents:
-            # adjust subscriber information
-            subscriber = overdue_rent.user.subscriber
-            subscriber.has_rent_issue = True
-            subscriber.save()
+        for late_sub in late_subs:
+            # adjust the subscriber status
+            if not late_sub.has_rent_issue:
+                late_sub.has_rent_issue = True
+                late_sub.save()
 
-            # adjust rental information
-            overdue_rent.late = True
-            overdue_rent.save()
+            # adjust the rental(s) status(es)
+            late_books = (
+                late_sub.user.rent_books
+                .filter(user__rent_books__returned_on__isnull=True)
+                .filter(user__rent_books__due_for__gte=today)
+            )
 
-            # send email to subscriber
-            generic_book = overdue_rent.book.generic_book.title # the subscriber doesn't reason in terms on books
-            msg = """Dear {}, you passed the rent deadline for {}.
-            You can't rent more until you fix your situation""".format(subscriber, generic_book)
-            # send email with backend
+            for late_book in late_books:
+                if not late_book.late:
+                    late_book.late = True
+                    late_book.save()
+
+            # prepare and send email to subscriber
+            # TODO email formating with jinja?
+            # msg = """Dear {}, you passed the rent deadline for {}.
+            # You can't rent more until you fix your situation""".format(subscriber, generic_book)
+            # TODO backend to send email
 
         # self.stdout.write(self.style.SUCCESS('Successfully updated rents'))
         # replace with logging later
