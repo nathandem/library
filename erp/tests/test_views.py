@@ -211,10 +211,10 @@ class RentViewTest(APITestCase):
             [{"type": "The subscriber's subscription is over."}]
         )
 
-    def test_check_sub_can_rent__has_rent_issue(self):
+    def test_check_sub_can_rent__has_issue(self):
         # sub doesn't have any active rental
         sub = self.sub
-        sub.has_rent_issue = True
+        sub.has_issue = True
         sub.save()
 
         res = self.client.get(
@@ -406,3 +406,95 @@ class ReturnViewTest(APITestCase):
             "You can't return a book that you didn't rent yourself."
         )
 
+
+class ReserveGenericBookViewTest(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.lib = erp_factories.StandardLibrarianFactory()
+        cls.lib_token = AuthToken.objects.create(cls.lib.user)
+        cls.client = APIClient()
+
+    def setUp(self):
+        self.sub = erp_factories.SubscriberFactory()
+        self.gbook = erp_factories.GenericBookFactory()
+
+    def test_book_available_copy_genericbook(self):
+        gbook = self.gbook
+        book = erp_factories.AvailableBookFactory()
+
+        res = self.client.post(
+            path='/api/reserve/%s/' % self.sub.id,
+            data={'genericbook_id': gbook.id},
+            format='json',
+            HTTP_AUTHORIZATION='Token %s' % self.lib_token,
+        )
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertContains(
+            response=res,
+            text="The book {gbook} ref {book_id} is booked for you, until {date_end_booking}".format(
+                gbook=gbook,
+                book_id=book.id,
+                date_end_booking=date.today() + timedelta(days=settings.MAX_BOOKING_DAYS)
+            )
+        )
+
+    def test_book_non_available_copy_genericbook(self):
+        gbook = self.gbook
+        book = erp_factories.RentBookFactory()
+
+        res = self.client.post(
+            path='/api/reserve/%s/' % self.sub.id,
+            data={'genericbook_id': gbook.id},
+            format='json',
+            HTTP_AUTHORIZATION='Token %s' % self.lib_token,
+        )
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertContains(
+            response=res,
+            text="The book {gbook} is booked for you. Unfortunately, no book is available is the library right now. We'll email you as soon as we have a copy of it.".format(
+                gbook=gbook,
+            )
+        )
+
+    def test_reserve_non_existing_book(self):
+        res = self.client.post(
+            path='/api/reserve/%s/' % self.sub.id,
+            data={'genericbook_id': 1000000},
+            format='json',
+            HTTP_AUTHORIZATION='Token %s' % self.lib_token,
+        )
+
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_reserve_bad_payload(self):
+        res = self.client.post(
+            path='/api/reserve/%s/' % self.sub.id,
+            data={'gbook_id': self.gbook.id},
+            format='json',
+            HTTP_AUTHORIZATION='Token %s' % self.lib_token,
+        )
+
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertContains(
+            response=res,
+            text='{"detail":"No genericbook_id was provided."}',
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    def test_reserve_cant_book(self):
+        sub = erp_factories.SubscriberFactory(has_issue=True)
+
+        res = self.client.post(
+            path='/api/reserve/%s/' % sub.id,
+            data={'genericbook_id': self.gbook.id},
+            format='json',
+            HTTP_AUTHORIZATION='Token %s' % self.lib_token,
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertContains(
+            response=res,
+            text="Sorry, you can't reserve books. Check your status to find out why.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )

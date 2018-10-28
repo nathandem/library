@@ -71,7 +71,7 @@ class SubscriberSerializer(RelatedUserValidatorMixin, serializers.ModelSerialize
     class Meta: #TODO include current rentals and bookings
         model = erp_models.Subscriber
         fields = ('id', 'address_number_and_street', 'address_zipcode', 'subscription_date',
-                  'iban', 'has_rent_issue', 'can_rent', 'valid_subscription', 'user')
+                  'iban', 'has_issue', 'has_received_warning', 'can_rent', 'valid_subscription', 'user')
         read_only_fields = ('id',)
 
     def create(self, validated_data):

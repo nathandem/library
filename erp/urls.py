@@ -35,5 +35,5 @@ urlpatterns = [
     # They barely not rely on DRF's serializers
     path('rent/<int:sub_pk>/', views.RentBook.as_view()),
     path('return/<int:sub_pk>/', views.ReturnBook.as_view()),
-    path('book/<int:sub_pk>/', views.BookGenericBook.as_view()),
+    path('reserve/<int:sub_pk>/', views.ReserveGenericBook.as_view()),
 ]

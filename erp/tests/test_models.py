@@ -35,15 +35,15 @@ class SubscriberModelTest(TestCase):
 
     def test_issues_with_subscriber(self):
         sub = erp_factories.SubscriberFactory()
-        self.assertFalse(sub.has_rent_issue)
-        self.assertFalse(sub.received_warning)
+        self.assertFalse(sub.has_issue)
+        self.assertFalse(sub.has_received_warning)
         self.assertTrue(sub.can_rent)
 
-        sub.received_warning = True
-        self.assertFalse(sub.has_rent_issue)
+        sub.has_received_warning = True
+        self.assertFalse(sub.has_issue)
         self.assertTrue(sub.can_rent)
 
-        sub.has_rent_issue = True
+        sub.has_issue = True
         self.assertFalse(sub.can_rent)
 
     def test_books_related_properties(self):

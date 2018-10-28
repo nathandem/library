@@ -71,4 +71,4 @@ I give fields/columns semi-verbose names, so that no Django `verbose_name` is ne
 The name should indicate both the meaning of the column, but also its type.
 
 In the Book model: `joined_library_on` suggests it's a Date, `joined_library_at` would have been a Datetime
-Example in the Subscriber model: `has_rent_issue`, `received_warning` can't be but booleans
+Example in the Subscriber model: `has_issue`, `has_received_warning` can't be but booleans

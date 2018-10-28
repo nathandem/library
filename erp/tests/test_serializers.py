@@ -41,8 +41,8 @@ class SubscriberSerializerTest(TestCase):
         sub = erp_models.Subscriber.objects.get(user__username='john.doe@test.co')
 
         self.assertEqual(sub.subscription_date, date.today())
-        self.assertFalse(sub.has_rent_issue)
-        self.assertFalse(sub.received_warning)
+        self.assertFalse(sub.has_issue)
+        self.assertFalse(sub.has_received_warning)
         self.assertFalse(bool(sub.current_rentals))
 
     def test_deserialize_invalid_subscriber_missing_required_field(self):

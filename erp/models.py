@@ -29,6 +29,15 @@ class Librarian(models.Model):
 class Subscriber(models.Model):
     """
     Note: subscribers' user__username == user__email
+
+    We track bad subscribers with has_received_warning and has_issue.
+    These two booleans are set to False when the Subscriber create his account.
+    If a user doesn't return his book or rent a book we booked for him on time,
+    has_received_warning becomes True.
+    At this point, he still can do everything but was warned.
+    If another issue occurs, has_issue is set to True.
+    He then can't rent or book new books, he has settle his situation with the librarians
+    to restore has_issue to False (has_received_warning remains).
     """
     # OneToOneField() = ForeignKey(unique=True)
     user = models.OneToOneField(User, on_delete=models.CASCADE)
@@ -36,8 +45,8 @@ class Subscriber(models.Model):
     address_zipcode = models.CharField(max_length=20)
     iban = models.CharField(max_length=40)
     subscription_date = models.DateField(default=date.today)
-    has_rent_issue = models.BooleanField(default=False)
-    received_warning = models.BooleanField(default=False)
+    has_issue = models.BooleanField(default=False)
+    has_received_warning = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['user__first_name']
@@ -56,14 +65,29 @@ class Subscriber(models.Model):
     @property
     def can_rent(self):
         return (
-            not self.has_rent_issue
+            not self.has_issue
             and self.valid_subscription
             and self.current_rentals.count() < settings.MAX_RENT_BOOKS
         )
 
     @property
+    def can_book(self):
+        return (
+            not self.has_issue
+            and self.valid_subscription
+            and self.current_bookings.count() < settings.MAX_BOOKING_BOOKS
+        )
+
+    @property
     def valid_subscription(self):
         return date.today() < (self.subscription_date + timedelta(days=settings.SUBSCRIPTION_DAYS_LENGTH))
+
+    def didnt_follow_rules(self):
+        if not self.has_received_warning:
+            self.has_received_warning = True
+        else:
+            self.has_issue = True
+        self.save()
 
 
 # Library management
@@ -162,7 +186,7 @@ def set_due_for():
 class Rental(models.Model):
     """
     This Rental table allows to:
-    - keep track of current rentals, allowing to know if a rent is late (send email to subscriber and mark him has_rent_issue)
+    - keep track of current rentals, allowing to know if a rent is late (send email to subscriber and mark him has_issue)
     - keep track of previous rentals, allowing to perform some analytics on the more, or least, popular GenericBooks
     """
     # fields filled at the creation of the rental
@@ -198,20 +222,23 @@ class Booking(models.Model):
     request_made_on is to prioritize who gets his book resolved first, when several subscribers booked the same generic_book.
     book_booked_on stores the date at which the booking of a generic_book has been resolved into a book, starting from
         this date the subscriber has a certain period to withdraw the book (refer to the settings)
-    book_withdrawn_during_booking_period tells whether the subscriber played fair with the booking he made,
-        or not. If not, the subscriber receives a warning (subscriber.received_warning = True)
+    was_cancelled depends on whether the subscriber played fair with the booking he made, or not.
     """
+    # set at creation of the booking
     user = models.ForeignKey(to=User, on_delete=models.CASCADE, related_name='bookings')
     generic_book = models.ForeignKey(to=GenericBook, on_delete=models.CASCADE, related_name='bookings')
-    book = models.ForeignKey(to=Book, on_delete=models.CASCADE, related_name='bookings', blank=True, null=True)
     request_made_on = models.DateField(auto_now_add=True)
+
+    # set at resolution of the booking, booking is either attached to a book or cancelled
+    was_cancelled = models.BooleanField(default=False)
+    book = models.ForeignKey(to=Book, on_delete=models.CASCADE, related_name='bookings', blank=True, null=True)
     book_booked_on = models.DateField(blank=True, null=True)
-    book_withdrawn_during_booking_period = models.BooleanField(blank=True, null=True)
 
     def __self__(self):
-        return "{} booked by {} on {} (resolved: {})".format(self.generic_book, self.user.subscriber,
-                                                             self.request_made_on, self.resolved)
+        return "{} booked by {} on {} (resolved: {})".format(
+            self.generic_book, self.user.subscriber, self.request_made_on, self.resolved
+        )
 
     @property
-    def resolved(self):
-        return bool(self.book)
+    def is_over(self): # it's > not >= because we are kind
+        return self.book_booked_on + timedelta(days=settings.MAX_BOOKING_DAYS) > date.today()

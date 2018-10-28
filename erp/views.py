@@ -1,7 +1,7 @@
-from datetime import date
+from datetime import date, timedelta
 
-from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.conf import settings
 
 from knox.models import AuthToken
 from knox.views import LoginView as KnoxLoginView
@@ -314,7 +314,7 @@ class RentBook(APIView):
             issues = []
             # no ValidationError (for field validation)
             # opti: use APIException here, instead of a regular msg
-            if subscriber.has_rent_issue:
+            if subscriber.has_issue:
                 issues.append({"type": "The subscriber has rent issues."})
             if not subscriber.valid_subscription:
                 issues.append({"type": "The subscriber's subscription is over."})
@@ -357,11 +357,19 @@ class RentBook(APIView):
             return Response(data={"detail": "No book_id was provided."}, status=status.HTTP_400_BAD_REQUEST)
 
         book = get_object_or_404(erp_models.Book, pk=book_id)
-        if not book.status == 'AVAILABLE':
+        if not book.status == 'AVAILABLE' or book.status == 'BOOKED':
             return Response(
-                data={"detail": "{} is in the status {}.".format(book.generic_book.title, book.status)},
+                data={"detail": "You can't rent {} in the status {}.".format(book.generic_book.title, book.status)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        if book.status == 'BOOKED':
+            booking = book.bookings.last()
+            if booking.is_over: # this case is normally already dealt with `try_book_gbook`, unless issue with this script
+                booking.was_cancelled = True
+                subscriber.didnt_follow_rules()
+                return self.get(request, sub_pk)
+
         erp_models.Rental.objects.create(user=subscriber.user, book=book)
         book.status = 'RENT'
         book.save()
@@ -406,18 +414,8 @@ class ReturnBook(APIView):
         )
 
 
-class BookGenericBook(APIView):
+class ReserveGenericBook(APIView):
     """
-    Just like with the RentBook view, 2 steps in the process of booking a book:
-    - 1st: check the subscriber is allowed to book a new book
-           This is performed with the GET of this endpoint, only passing the pk of the subscriber.
-    - 2nd: if the user can book, create a booking for him on the generic_book
-           This is performed with the POST of this endpoint, using the data in the body of the request.
-
-    Subscribers can reserve/book a book, in two cases:
-        - when they are not in the library and wish to reserve a generic book, with an 'AVAILABLE' copy of it
-        - when they wish to rent a generic_book, with all its copies are 'RENT' or in 'MAINTENANCE'
-
     Subscribers book generic_books, not books. A subscriber doesn't want to reserve book_id=679430 which happens to be
     one of the copies of the "The Great Gatsby" the library owns, he wants to book "The Great Gatsby".
     Hence, it's up to us to resolve the translation from generic_book to an actual book.
@@ -427,8 +425,53 @@ class BookGenericBook(APIView):
     """
     permission_classes = (IsLibrarian | IsSubscriber,)
 
-    def get(self, request, sub_pk):
-        pass
-
     def post(self, request, sub_pk):
-        pass
+        """
+        I: {'genericbook_id': int}
+        O: one of the two messages below
+        """
+        sub = get_object_or_404(erp_models.Subscriber.objects.select_related('user'), pk=sub_pk)
+
+        if not sub.can_book:
+            return Response(
+                data="Sorry, you can't reserve books. Check your status to find out why.",
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        gbook_id = request.data.get('genericbook_id')
+        if not gbook_id:
+            return Response(data={"detail": "No genericbook_id was provided."}, status=status.HTTP_400_BAD_REQUEST)
+        gbook = get_object_or_404(erp_models.GenericBook, pk=gbook_id)
+
+        # try to link a book to the generic_book
+        # if the booking can't be resolved, a booking is created but with no book
+        book = None
+        book_booked_on = None
+        if gbook.books.filter(status='AVAILABLE').exists():
+            book = gbook.books.filter(status='AVAILABLE').first()
+            book_booked_on = date.today()
+            book.status = 'BOOKED'
+            book.save()
+
+        erp_models.Booking.objects.create(
+            user=sub.user,
+            generic_book=gbook,
+            request_made_on=date.today(),
+            book=book,
+            book_booked_on=book_booked_on,
+        )
+
+        # depending the success of the booking resolution, choose one message or the other
+        if book_booked_on:
+            msg = "The book {gbook} ref {book_id} is booked for you, until {date_end_booking}".format(
+                gbook=gbook,
+                book_id=book.id,
+                date_end_booking=date.today() + timedelta(days=settings.MAX_BOOKING_DAYS)
+            )
+
+        else:
+            msg = "The book {gbook} is booked for you. Unfortunately, no book is available is the library right now. We'll email you as soon as we have a copy of it.".format(
+                gbook=gbook,
+            )
+
+        return Response(msg)

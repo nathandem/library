@@ -10,7 +10,7 @@ class Command(BaseCommand):
         """
         look for rentals that are overdue (due_for > today):
             - email to inform
-            - subscriber.has_rent_issue = True
+            - subscriber.has_issue = True
             - rental.late = True
         """
         today = date.today()
@@ -24,8 +24,8 @@ class Command(BaseCommand):
 
         for late_sub in late_subs:
             # adjust the subscriber status
-            if not late_sub.has_rent_issue:
-                late_sub.has_rent_issue = True
+            if not late_sub.has_issue:
+                late_sub.has_issue = True
                 late_sub.save()
 
             # adjust the rental(s) status(es)
