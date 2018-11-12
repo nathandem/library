@@ -68,7 +68,7 @@ class SubscriberSerializer(RelatedUserValidatorMixin, serializers.ModelSerialize
     """
     user = UserSerializer() # remind: nested serializers are read-only, but validation occurs on them anyway...
 
-    class Meta: #TODO include current rentals and bookings
+    class Meta:
         model = erp_models.Subscriber
         fields = ('id', 'address_number_and_street', 'address_zipcode', 'subscription_date',
                   'iban', 'has_issue', 'has_received_warning', 'can_rent', 'valid_subscription', 'user')
@@ -89,6 +89,18 @@ class SubscriberSerializer(RelatedUserValidatorMixin, serializers.ModelSerialize
             if user_serializer.is_valid(raise_exception=True):
                 user_serializer.save()
         return super().update(instance, validated_data)
+
+
+class SubscriberRentalSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = erp_models.Rental
+        fields = ('book', 'rent_on', 'due_for', 'late',) #TODO to be precised
+
+
+class SubscriberBookingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = erp_models.Booking
+        fields = ('generic_book', 'request_made_on', 'book', 'book_booked_on',) #TODO to be precised
 
 
 class LibrarianSerializer(RelatedUserValidatorMixin, serializers.ModelSerializer):

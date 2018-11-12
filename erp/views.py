@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 
-from django.shortcuts import get_object_or_404
 from django.conf import settings
+from django.shortcuts import get_object_or_404
 
 from knox.models import AuthToken
 from knox.views import LoginView as KnoxLoginView
@@ -98,9 +98,20 @@ class SubscriberDetail(APIView):
     permission_classes = (IsLibrarian,)
 
     def get(self, request, pk):
-        subscriber = get_object_or_404(erp_models.Subscriber, pk=pk)
-        serializer = erp_serializers.SubscriberSerializer(subscriber)
-        return Response(serializer.data)
+        sub = get_object_or_404(erp_models.Subscriber, pk=pk)
+
+        # don't forget many=True with querysets
+        sub_current_rentals = erp_serializers.SubscriberRentalSerializer(sub.current_rentals, many=True).data
+        sub_current_bookings = erp_serializers.SubscriberBookingSerializer(sub.current_bookings, many=True).data
+        sub = erp_serializers.SubscriberSerializer(sub).data
+
+        # this replaces better another complex serializer for just this view
+        sub.update({
+            'current_rentals': sub_current_rentals,
+            'current_bookings': sub_current_bookings,
+        })
+
+        return Response(sub)
 
     def put(self, request, pk):
         subscriber = get_object_or_404(erp_models.Subscriber, pk=pk)
@@ -298,33 +309,33 @@ class RentBook(APIView):
             "issues": [{"type": "..."}] OR null if no issues (issues = issues with sub & max nb books reached)
         }
         """
-        subscriber = get_object_or_404(erp_models.Subscriber.objects.select_related('user'), pk=sub_pk)
+        sub = get_object_or_404(erp_models.Subscriber.objects.select_related('user'), pk=sub_pk)
         issues = None
         current_rentals = None
 
-        if subscriber.current_rentals.count():
-            rentals = subscriber.current_rentals
+        if sub.current_rentals.count():
+            rentals = sub.current_rentals
             current_rentals = [{'title': rental.book.generic_book.title,
                                 'date_of_return': rental.due_for} for rental in rentals]
 
         # subscriber cannot rent
-        if not subscriber.can_rent:
+        if not sub.can_rent:
             can_rent = False
             nb_books_allowed = 0
             issues = []
             # no ValidationError (for field validation)
             # opti: use APIException here, instead of a regular msg
-            if subscriber.has_issue:
+            if sub.has_issue:
                 issues.append({"type": "The subscriber has rent issues."})
-            if not subscriber.valid_subscription:
+            if not sub.valid_subscription:
                 issues.append({"type": "The subscriber's subscription is over."})
-            if subscriber.current_rentals.count() == library_settings.MAX_RENT_BOOKS:
+            if sub.current_rentals.count() == library_settings.MAX_RENT_BOOKS:
                 issues.append({"type": "Max number of books rent already reached."})
 
         # subscriber can rent
         else:
             can_rent = True
-            nb_books_allowed = library_settings.MAX_RENT_BOOKS - subscriber.current_rentals.count()
+            nb_books_allowed = library_settings.MAX_RENT_BOOKS - sub.current_rentals.count()
 
         message = {
             'can_rent': can_rent,
@@ -390,7 +401,7 @@ class ReturnBook(APIView):
 
         Same remark than with RentBook.post() on informing the subscriber of his state and rentals.
         """
-        subscriber = get_object_or_404(erp_models.Subscriber, pk=sub_pk)
+        sub = get_object_or_404(erp_models.Subscriber, pk=sub_pk)
 
         book_id = request.data.get('book_id')
         if not book_id:
@@ -398,7 +409,7 @@ class ReturnBook(APIView):
 
         book = erp_models.Book.objects.get(pk=book_id)
         rental = book.current_rental
-        if not rental.user == subscriber.user:
+        if rental.user != sub.user:
             return Response(
                 data={"detail": "You can't return a book that you didn't rent yourself."},
                 status=status.HTTP_400_BAD_REQUEST

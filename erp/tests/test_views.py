@@ -111,6 +111,21 @@ class ResourceViewTest(APITestCase):
             status_code=status.HTTP_404_NOT_FOUND,
         )
 
+    def test_subscriber_detail_get_response(self):
+        sub = erp_factories.SubscriberFactory()
+        erp_factories.AvailableBookFactory()
+
+        res = self.client.get(
+            path='/api/subscribers/%s/' % sub.id,
+            format='json',
+            HTTP_AUTHORIZATION='Token %s' % self.lib_token,
+        )
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertTrue('current_rentals' in res.data)
+        self.assertTrue('current_bookings' in res.data)
+
+
 class RentViewTest(APITestCase):
     @classmethod
     def setUpTestData(cls):

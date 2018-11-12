@@ -229,10 +229,13 @@ class Booking(models.Model):
     generic_book = models.ForeignKey(to=GenericBook, on_delete=models.CASCADE, related_name='bookings')
     request_made_on = models.DateField(auto_now_add=True)
 
-    # set at resolution of the booking, booking is either attached to a book or cancelled
-    was_cancelled = models.BooleanField(default=False)
+    # set at resolution of the booking
     book = models.ForeignKey(to=Book, on_delete=models.CASCADE, related_name='bookings', blank=True, null=True)
     book_booked_on = models.DateField(blank=True, null=True)
+
+    # set at completion of the booking, either cancelled or rent
+    # was_rent = models.BooleanField(default=False) #TODO
+    was_cancelled = models.BooleanField(default=False)
 
     def __self__(self):
         return "{} booked by {} on {} (resolved: {})".format(

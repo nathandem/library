@@ -41,10 +41,9 @@ class Command(BaseCommand):
                     late_book.save()
 
             # prepare and send email to subscriber
-            # TODO email formating with jinja?
+
             # msg = """Dear {}, you passed the rent deadline for {}.
             # You can't rent more until you fix your situation""".format(subscriber, generic_book)
-            # TODO backend to send email
 
         # self.stdout.write(self.style.SUCCESS('Successfully updated rents'))
         # replace with logging later

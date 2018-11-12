@@ -1,21 +1,15 @@
-# Introduction 
-Small personal project created to practice python and django.
+Small personal project to practice crafting a webapp with python and django.
 I'm open to any technical suggestion and remark :)
 
 
 # Forwards
 
-## Blocking
-- complete test coverage of the existing perimeter
-- add select_related() to all subscriber and librarian queries
-
 ## Short-term:
-- create the booking views, the associated mgt commands and reflect the changes introduced by this feature to the rest of the code
 - create a search feature, at close as possible from the stock django querysets
 - make a frontend: django admin for the resource modification is enough, JS front for the rest
 
 ## Mid-term:
-- set-up a email back-end
+- set-up an email templating and an email back-end
 - deploy the app
 - add more data (pay close attention to the migrations not to lose a single drop of data)
 - test the app in a real situation (need to find people interested)
@@ -24,3 +18,9 @@ I'm open to any technical suggestion and remark :)
 ## Later:
 - store images for the books and subscribers
 - add analytics
+- include un endpoint schema
+- include payment API (for the fun of testing it)
+
+## Maybe
+- create a subscription table to have different types of subscription, and potentially subscription for several subscribers (like a family plan)
+- attach a QR code to subscribers, apparently some python library do that

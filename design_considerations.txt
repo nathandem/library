@@ -72,3 +72,46 @@ The name should indicate both the meaning of the column, but also its type.
 
 In the Book model: `joined_library_on` suggests it's a Date, `joined_library_at` would have been a Datetime
 Example in the Subscriber model: `has_issue`, `has_received_warning` can't be but booleans
+
+
+Testing good practices
+----------------------
+
+When issue found, add a test that would have caught the problem.
+
+
+On DRF not using standard python data types
+-------------------------------------------
+
+Model objects don't include a method to serialize themselves (move from a model object into a
+python dict). So don't querysets. They don't include a method to transform the model objects
+they contain into a list of dictionaries, with the dictionaries being representations of the data
+in the model objects.
+Instead, querysets include a set of methods matching get, put, update sql commands.
+https://docs.djangoproject.com/en/2.1/ref/models/querysets/
+and model objects, the methods and properties defined in the models plus some basic methods related
+to dealing with this line in the SQL table.
+
+Yet we need to move from querysets or model objects to the content-type of the response.
+
+- Django's TemplateResponse does that. We provide the template a context made of python objects
+and, in the template, we pick elements of the context to be included in the very template.
+
+- Django provides a JsonResponse which returns a json response. Yet, this one takes a dict as its
+entry. How do we get this dict? Either by making it by hands, or by using a DRF serializer.
+
+JSONResponse(data, encoder=DjangoJSONEncoder, safe=True, json_dumps_params=None, **kwargs)
+(In the doc, JsonResponse is said to be able to take different input data than a base dict, yet
+in practice it crashes when receiving a Queryset or even a simple Model object.)
+
+- DRF's Response method takes a native python object (a dictionary) and turns in into a JSON text.
+
+=> In short, to returns JSON objects. 2 steps: 1) create the python dict, 2) dump the python dict
+into a JSON string and send it to the network.
+To create the python dict, 2 solutions: use a DRF's serializer or make the dict by hand.
+To dump the json and send it, 2 solutions: use Django's JsonResponse or DRF's Response.
+
+Note on DRF's types: DRF doesn't pop its custom data types from nowhere, they derive from and
+extend native python types.
+For example, `ReturnDict`, the datatype used in `serializer.data` extends the `dict` object,
+as such it has all its methods and attributes not overwritten, most of the default ones are there.
